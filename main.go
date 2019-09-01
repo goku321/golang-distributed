@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"sort"
-	"runtime"
-	"sync"
 	"net"
+	"runtime"
+	"sort"
+	"sync"
 )
 
 var wg sync.WaitGroup
@@ -36,19 +36,37 @@ func main() {
 	port := flag.String("port", "8001", "port to use")
 	flag.Parse()
 
-	node1 := NodeInfo{
-		NodeId:     1,
+	masterNode := NodeInfo{
+		NodeId:     0,
 		NodeIpAddr: *clusterIp,
 		Port:       *port,
 	}
-	fmt.Println(node1)
+
 	if *nodeType == "master" {
-		wg.Add(2)
+		wg.Add(3)
+		requestObject := getRequestObject(masterNode, slaveNode, dataToSort)
 		go connectToNode(NodeInfo{NodeId: 1, NodeIpAddr: *clusterIp, Port: "3002"})
-		go connectToNode(NodeInfo{NodeId: 1, NodeIpAddr: *clusterIp, Port: "3003"})
+		go connectToNode(NodeInfo{NodeId: 2, NodeIpAddr: *clusterIp, Port: "3003"})
+		go connectToNode(NodeInfo{NodeId: 3, NodeIpAddr: *clusterIp, Port: "3004"})
 		wg.Wait()
 	} else {
 		listenOnPort(node1)
+	}
+}
+
+func getRequestObject(source NodeInfo, dest NodeInfo, dataToSort []string) {
+	return data{
+		Source: NodeInfo{
+			NodeId:     source.NodeId,
+			NodeIpAddr: source.NodeIpAddr,
+			Port:       source.Port,
+		},
+		Dest: NodeInfo{
+			NodeId:     dest.NodeId,
+			NodeIpAddr: dest.NodeIpAddr,
+			Port:       dest.Port,
+		},
+		Message: dataToSort,
 	}
 }
 
@@ -77,15 +95,12 @@ func listenOnPort(node NodeInfo) {
 			// handle error
 		}
 
-		fmt.Println("This is the connection: ", conn)
-		var data []string
-		json.NewDecoder(conn).Decode(&data)
-		sort.Strings(data)
-		fmt.Println("Got this: ", data)
-		// go handleConnection(conn)
+		handleConnection(conn)
 	}
 }
 
-// func handleConnection(conn) {
-// 	fmt.Println("This is the connection: ", conn)
-// }
+func handleConnection(conn net.Conn) {
+	var request data
+	json.NewDecoder(conn).Decode(&request)
+	fmt.Println("Formatted Data: ", request)
+}
