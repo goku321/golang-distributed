@@ -116,5 +116,6 @@ func listenOnPort(node NodeInfo) {
 func handleConnection(conn net.Conn) {
 	var request data
 	json.NewDecoder(conn).Decode(&request)
+	json.NewEncoder(conn).Encode("Got Your Message")
 	fmt.Println("Formatted Data: ", request)
 }
