@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net"
 	"runtime"
-	"sort"
+	// "sort"
 	"sync"
 )
 
 var wg sync.WaitGroup
+
+// var sampleData []string = ["Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay"]
 
 type NodeInfo struct {
 	NodeId     int    `json:"nodeId"`
@@ -36,6 +38,8 @@ func main() {
 	port := flag.String("port", "8001", "port to use")
 	flag.Parse()
 
+	sampleData := []string{"Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay"}
+
 	masterNode := NodeInfo{
 		NodeId:     0,
 		NodeIpAddr: *clusterIp,
@@ -44,17 +48,23 @@ func main() {
 
 	if *nodeType == "master" {
 		wg.Add(3)
-		requestObject := getRequestObject(masterNode, slaveNode, dataToSort)
-		go connectToNode(NodeInfo{NodeId: 1, NodeIpAddr: *clusterIp, Port: "3002"})
-		go connectToNode(NodeInfo{NodeId: 2, NodeIpAddr: *clusterIp, Port: "3003"})
-		go connectToNode(NodeInfo{NodeId: 3, NodeIpAddr: *clusterIp, Port: "3004"})
+		slaveNode1 := NodeInfo{NodeId: 1, NodeIpAddr: *clusterIp, Port: "3002"}
+		slaveNode2 := NodeInfo{NodeId: 2, NodeIpAddr: *clusterIp, Port: "3003"}
+		slaveNode3 := NodeInfo{NodeId: 3, NodeIpAddr: *clusterIp, Port: "3004"}
+		requestObject1 := getRequestObject(masterNode, slaveNode1, sampleData)
+		requestObject2 := getRequestObject(masterNode, slaveNode2, sampleData)
+		requestObject3 := getRequestObject(masterNode, slaveNode3, sampleData)
+		go connectToNode(slaveNode1, requestObject1)
+		go connectToNode(slaveNode2, requestObject2)
+		go connectToNode(slaveNode3, requestObject3)
 		wg.Wait()
 	} else {
-		listenOnPort(node1)
+		slaveNode := createNode(*clusterIp, *port)
+		listenOnPort(slaveNode)
 	}
 }
 
-func getRequestObject(source NodeInfo, dest NodeInfo, dataToSort []string) {
+func getRequestObject(source NodeInfo, dest NodeInfo, dataToSort []string) data {
 	return data{
 		Source: NodeInfo{
 			NodeId:     source.NodeId,
@@ -70,14 +80,18 @@ func getRequestObject(source NodeInfo, dest NodeInfo, dataToSort []string) {
 	}
 }
 
-func createNode(node NodeInfo) {
+func createNode(ipAddr string, port string) NodeInfo {
+	return NodeInfo{
+		NodeId:     1,
+		NodeIpAddr: ipAddr,
+		Port:       port,
+	}
 }
 
-func connectToNode(node NodeInfo) {
+func connectToNode(node NodeInfo, request data) {
 	defer wg.Done()
 	conn, _ := net.Dial("tcp", node.NodeIpAddr+":"+node.Port)
-	data := []string{"c", "b", "a"}
-	json.NewEncoder(conn).Encode(data)
+	json.NewEncoder(conn).Encode(request)
 	status, _ := bufio.NewReader(conn).ReadString('\n')
 	fmt.Println(status)
 }
