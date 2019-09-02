@@ -15,8 +15,6 @@ import (
 var wg sync.WaitGroup
 var result [][]string
 
-// var sampleData []string = ["Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay"]
-
 type NodeInfo struct {
 	NodeId     int    `json:"nodeId"`
 	NodeIpAddr string `json:"nodeIpAddr"`
@@ -120,7 +118,7 @@ func listenOnPort(node NodeInfo) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			// handle error
+			fmt.Println("Unable to accept connection.")
 		}
 
 		handleConnection(conn)
