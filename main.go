@@ -1,13 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
 	"runtime"
-	// "sort"
+	"sort"
 	"sync"
 )
 
@@ -34,18 +33,20 @@ func main() {
 	runtime.GOMAXPROCS(1)
 	nodeType := flag.String("nodetype", "master", "type of node")
 	// numberOfSlaves := flag.Int("numberofslaves", 3, "number of slaves to use")
-	clusterIp := flag.String("clusterip", "127.0.0.1:8001", "ip address of slave node")
-	port := flag.String("port", "8001", "port to use")
+	clusterIp := flag.String("clusterip", "127.0.0.1", "ip address of slave node")
+	port := flag.String("port", "3000", "port to use")
 	flag.Parse()
 
 	sampleData := []string{"Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay"}
+	ip, _ := net.InterfaceAddrs()
 
 	masterNode := NodeInfo{
 		NodeId:     0,
-		NodeIpAddr: *clusterIp,
+		NodeIpAddr: ip[0].String(),
 		Port:       *port,
 	}
 
+	// TODO: Refactor and make it dynamic
 	if *nodeType == "master" {
 		wg.Add(3)
 		slaveNode1 := NodeInfo{NodeId: 1, NodeIpAddr: *clusterIp, Port: "3002"}
@@ -92,8 +93,7 @@ func connectToNode(node NodeInfo, request data) {
 	defer wg.Done()
 	conn, _ := net.Dial("tcp", node.NodeIpAddr+":"+node.Port)
 	json.NewEncoder(conn).Encode(request)
-	status, _ := bufio.NewReader(conn).ReadString('\n')
-	fmt.Println(status)
+	handleResponse(conn)
 }
 
 func listenOnPort(node NodeInfo) {
@@ -116,6 +116,15 @@ func listenOnPort(node NodeInfo) {
 func handleConnection(conn net.Conn) {
 	var request data
 	json.NewDecoder(conn).Decode(&request)
-	json.NewEncoder(conn).Encode("Got Your Message")
+	sort.Strings(request.Message)
+	// Create new response object here
+	json.NewEncoder(conn).Encode(&request)
 	fmt.Println("Formatted Data: ", request)
+}
+
+func handleResponse(conn net.Conn) {
+	decoder := json.NewDecoder(conn)
+	var response data
+	decoder.Decode(&response)
+	fmt.Println(response.Message)
 }
