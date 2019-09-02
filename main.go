@@ -7,10 +7,13 @@ import (
 	"net"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
+	"time"
 )
 
 var wg sync.WaitGroup
+var result [][]string
 
 // var sampleData []string = ["Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay"]
 
@@ -31,13 +34,19 @@ type data struct {
 func main() {
 	// Allocate one logical processor
 	runtime.GOMAXPROCS(1)
+
 	nodeType := flag.String("nodetype", "master", "type of node")
-	// numberOfSlaves := flag.Int("numberofslaves", 3, "number of slaves to use")
+	numberOfSlaves := flag.Int("numberofslaves", 3, "number of slaves to use")
 	clusterIp := flag.String("clusterip", "127.0.0.1", "ip address of slave node")
 	port := flag.String("port", "3000", "port to use")
 	flag.Parse()
 
-	sampleData := []string{"Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay"}
+	parsedPortInInt, err := strconv.ParseInt(*port, 10, 64)
+	if err != nil {
+		fmt.Println("Error parsing port number")
+	}
+
+	sampleData := []string{"Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay", "Eight", "Nine"}
 	ip, _ := net.InterfaceAddrs()
 
 	masterNode := NodeInfo{
@@ -46,18 +55,16 @@ func main() {
 		Port:       *port,
 	}
 
-	// TODO: Refactor and make it dynamic
 	if *nodeType == "master" {
-		wg.Add(3)
-		slaveNode1 := NodeInfo{NodeId: 1, NodeIpAddr: *clusterIp, Port: "3002"}
-		slaveNode2 := NodeInfo{NodeId: 2, NodeIpAddr: *clusterIp, Port: "3003"}
-		slaveNode3 := NodeInfo{NodeId: 3, NodeIpAddr: *clusterIp, Port: "3004"}
-		requestObject1 := getRequestObject(masterNode, slaveNode1, sampleData)
-		requestObject2 := getRequestObject(masterNode, slaveNode2, sampleData)
-		requestObject3 := getRequestObject(masterNode, slaveNode3, sampleData)
-		go connectToNode(slaveNode1, requestObject1)
-		go connectToNode(slaveNode2, requestObject2)
-		go connectToNode(slaveNode3, requestObject3)
+		wg.Add(6)
+		for i, j := 0, 0; i < *numberOfSlaves; i++ {
+			parsedPortInInt++
+			slaveNode := createNode(*clusterIp, strconv.Itoa(int(parsedPortInInt)))
+			requestObject := getRequestObject(masterNode, slaveNode, sampleData[j:j+3])
+			j = j + 3
+			go listenOnPort(slaveNode)
+			go connectToNode(slaveNode, requestObject)
+		}
 		wg.Wait()
 	} else {
 		slaveNode := createNode(*clusterIp, *port)
@@ -91,14 +98,21 @@ func createNode(ipAddr string, port string) NodeInfo {
 
 func connectToNode(node NodeInfo, request data) {
 	defer wg.Done()
-	conn, _ := net.Dial("tcp", node.NodeIpAddr+":"+node.Port)
-	json.NewEncoder(conn).Encode(request)
-	handleResponse(conn)
+	for {
+		conn, err := net.DialTimeout("tcp", node.NodeIpAddr+":"+node.Port, time.Duration(10)*time.Second)
+		if err == nil {
+			json.NewEncoder(conn).Encode(request)
+			handleResponseFromSlave(conn)
+			conn.Close()
+			break
+		}
+		fmt.Println("There is no slave node available. Waiting...")
+	}
 }
 
 func listenOnPort(node NodeInfo) {
-	fmt.Println(string(node.Port))
-	ln, err := net.Listen("tcp", ":"+string(node.Port))
+	defer wg.Done()
+	ln, err := net.Listen("tcp", ":"+node.Port)
 	if err != nil {
 		fmt.Println("unable to create server")
 	}
@@ -110,6 +124,8 @@ func listenOnPort(node NodeInfo) {
 		}
 
 		handleConnection(conn)
+		conn.Close()
+		break
 	}
 }
 
@@ -117,14 +133,15 @@ func handleConnection(conn net.Conn) {
 	var request data
 	json.NewDecoder(conn).Decode(&request)
 	sort.Strings(request.Message)
-	// Create new response object here
-	json.NewEncoder(conn).Encode(&request)
-	fmt.Println("Formatted Data: ", request)
+	var response data
+	response = getRequestObject(request.Dest, request.Source, request.Message)
+	json.NewEncoder(conn).Encode(&response)
 }
 
-func handleResponse(conn net.Conn) {
+func handleResponseFromSlave(conn net.Conn) {
 	decoder := json.NewDecoder(conn)
 	var response data
 	decoder.Decode(&response)
-	fmt.Println(response.Message)
+	result = append(result, response.Message)
+	fmt.Println(result)
 }
