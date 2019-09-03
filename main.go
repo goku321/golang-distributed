@@ -55,12 +55,13 @@ func main() {
 
 	if *nodeType == "master" {
 		wg.Add(6)
-		for i, j := 0, 0; i < *numberOfSlaves; i++ {
+		for i, j := 0, 0; i < *numberOfSlaves; i, j = i+1, j+3 {
 			parsedPortInInt++
+
 			slaveNode := createNode(*clusterIp, strconv.Itoa(int(parsedPortInInt)))
-			requestObject := getRequestObject(masterNode, slaveNode, sampleData[j:j+3])
-			j = j + 3
 			go listenOnPort(slaveNode)
+
+			requestObject := getRequestObject(masterNode, slaveNode, sampleData[j:j+3])
 			go connectToNode(slaveNode, requestObject)
 		}
 		wg.Wait()
