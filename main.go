@@ -13,7 +13,7 @@ import (
 var wg sync.WaitGroup
 var masterKey bool = false
 var mutex = &sync.Mutex{}
-var result [][]string
+var dividedWork [][]string
 
 type NodeInfo struct {
 	NodeId     int    `json:"nodeId"`
@@ -44,7 +44,8 @@ func main() {
 		fmt.Println("Error parsing port number")
 	}
 
-	// sampleData := []string{"Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay", "Eight", "Nine"}
+	sampleData := []string{"Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay", "Eight", "Nine"}
+	divideWork(sampleData, *numberOfNodes - 1)
 
 	wg.Add(*numberOfNodes)
 	for i := 0; i < *numberOfNodes; i++ {
@@ -158,7 +159,21 @@ func handleResponseFromMaster(conn net.Conn) {
 	json.NewEncoder(conn).Encode(&request)
 }
 
-func divideWork([]string) {}
+func divideWork(sampleData []string, numberOfSlaves int) {
+	lenOfData := len(sampleData)
+	chunkSize := (lenOfData + numberOfSlaves -1) / numberOfSlaves
+
+	for i := 0; i < lenOfData; i += chunkSize {
+		end := i + chunkSize
+
+		if end > lenOfData {
+			end = lenOfData
+		}
+
+		dividedWork = append(dividedWork, sampleData[i:end])
+	}
+	fmt.Printf("%#v\n", dividedWork)
+}
 
 func selectMasterNode(node NodeInfo) {
 	mutex.Lock()
