@@ -5,11 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"net"
-	"runtime"
-	"sort"
+	// "sort"
 	"strconv"
 	"sync"
-	"time"
 )
 
 var wg sync.WaitGroup
@@ -21,21 +19,22 @@ type NodeInfo struct {
 	NodeId     int    `json:"nodeId"`
 	NodeIpAddr string `json:"nodeIpAddr"`
 	Port       string `json:"port"`
+	IsMaster   bool   `json:"isMaster"`
 }
+
+var nodes = make(map[NodeInfo]string)
+var masterNode NodeInfo
 
 /* A Request/Response format to transfer between nodes
    `Message` is the sorted/unsorted slice */
 type data struct {
 	Source  NodeInfo
 	Dest    NodeInfo
+	Type    string
 	Message []string
 }
 
 func main() {
-	// Allocate one logical processor
-	runtime.GOMAXPROCS(1)
-
-	nodeType := flag.String("nodeType", "master", "type of node")
 	numberOfNodes := flag.Int("numberOfNodes", 3, "number of slaves to use")
 	clusterIp := flag.String("clusterIp", "127.0.0.1", "ip address of slave node")
 	port := flag.String("port", "3000", "port to use")
@@ -47,33 +46,29 @@ func main() {
 	}
 
 	// sampleData := []string{"Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay", "Eight", "Nine"}
-	// ip, _ := net.InterfaceAddrs()
 
-	if *nodeType == "master" {
-		wg.Add(*numberOfNodes)
-		for i := 0; i < *numberOfNodes; i++ {
-			parsedPortInInt++
+	wg.Add(*numberOfNodes)
+	for i := 0; i < *numberOfNodes; i++ {
+		parsedPortInInt++
 
-			node := createNode(*clusterIp, strconv.Itoa(int(parsedPortInInt)))
-			go selectMasterNode(node)
-		}
-		// for i, j := 0, 0; i < *numberOfSlaves; i, j = i+1, j+3 {
-		// 	parsedPortInInt++
-
-		// 	slaveNode := createNode(*clusterIp, strconv.Itoa(int(parsedPortInInt)))
-		// 	go listenOnPort(slaveNode)
-
-		// 	requestObject := getRequestObject(masterNode, slaveNode, sampleData[j:j+3])
-		// 	go connectToNode(slaveNode, requestObject)
-		// }
-		wg.Wait()
-	} else {
-		slaveNode := createNode(*clusterIp, *port)
-		listenOnPort(slaveNode)
+		node := createNode(*clusterIp, strconv.Itoa(int(parsedPortInInt)))
+		go selectMasterNode(node)
 	}
+	wg.Wait()
+
+	wg.Add(*numberOfNodes)
+	for k, v := range nodes {
+		if v == "master" {
+			masterNode = k
+			go listenOnPort(k)
+		} else {
+			go connectToNode(k)
+		}
+	}
+	wg.Wait()
 }
 
-func getRequestObject(source NodeInfo, dest NodeInfo, dataToSort []string) data {
+func getRequestObject(source NodeInfo, dest NodeInfo, dataType string, dataToSort []string) data {
 	return data{
 		Source: NodeInfo{
 			NodeId:     source.NodeId,
@@ -85,6 +80,7 @@ func getRequestObject(source NodeInfo, dest NodeInfo, dataToSort []string) data 
 			NodeIpAddr: dest.NodeIpAddr,
 			Port:       dest.Port,
 		},
+		Type:    dataType,
 		Message: dataToSort,
 	}
 }
@@ -94,20 +90,26 @@ func createNode(ipAddr string, port string) NodeInfo {
 		NodeId:     1,
 		NodeIpAddr: ipAddr,
 		Port:       port,
+		IsMaster:   false,
 	}
 }
 
-func connectToNode(node NodeInfo, request data) {
+func connectToNode(node NodeInfo) {
 	defer wg.Done()
+	laddr, _ := net.ResolveTCPAddr("tcp", node.NodeIpAddr+":"+node.Port)
+	raddr, _ := net.ResolveTCPAddr("tcp", masterNode.NodeIpAddr+":"+masterNode.Port)
+
 	for {
-		conn, err := net.DialTimeout("tcp", node.NodeIpAddr+":"+node.Port, time.Duration(10)*time.Second)
+		conn, err := net.DialTCP("tcp", laddr, raddr)
 		if err == nil {
+			request := getRequestObject(node, masterNode, "getData", []string{"a"})
 			json.NewEncoder(conn).Encode(request)
 			handleResponseFromSlave(conn)
 			conn.Close()
 			break
 		}
-		fmt.Println("There is no slave node available. Waiting...")
+		fmt.Println("There is no Master node available. Waiting...", err)
+		// break
 	}
 }
 
@@ -115,7 +117,7 @@ func listenOnPort(node NodeInfo) {
 	defer wg.Done()
 	ln, err := net.Listen("tcp", ":"+node.Port)
 	if err != nil {
-		fmt.Println("unable to create server")
+		fmt.Printf("Unable to create server at port: %s\n", node.Port)
 	}
 
 	for {
@@ -124,19 +126,22 @@ func listenOnPort(node NodeInfo) {
 			fmt.Println("Unable to accept connection.")
 		}
 
-		handleConnection(conn)
-		conn.Close()
-		break
+		go handleConnection(conn)
 	}
 }
 
 func handleConnection(conn net.Conn) {
+	fmt.Printf("Serving %s\n", conn.RemoteAddr().String())
 	var request data
 	json.NewDecoder(conn).Decode(&request)
-	sort.Strings(request.Message)
+	if request.Type == "getData" {
+		fmt.Println("getData")
+	}
+	// sort.Strings(request.Message)
 	var response data
-	response = getRequestObject(request.Dest, request.Source, request.Message)
+	response = getRequestObject(request.Dest, request.Source, "sorted", request.Message)
 	json.NewEncoder(conn).Encode(&response)
+	conn.Close()
 }
 
 func handleResponseFromSlave(conn net.Conn) {
@@ -144,7 +149,7 @@ func handleResponseFromSlave(conn net.Conn) {
 	var response data
 	decoder.Decode(&response)
 	result = append(result, response.Message)
-	fmt.Println(result)
+	fmt.Println("This is the result: ", result)
 }
 
 func divideWork([]string) {}
@@ -152,13 +157,15 @@ func divideWork([]string) {}
 func selectMasterNode(node NodeInfo) {
 	mutex.Lock()
 	if masterKey {
+		nodes[node] = "slave"
 		wg.Done()
 		mutex.Unlock()
 		return
 	}
 	fmt.Println(node.Port)
 	masterKey = true
+	masterNode = node
+	nodes[node] = "master"
 	wg.Done()
-	// Assign Node as Master
 	mutex.Unlock()
 }
