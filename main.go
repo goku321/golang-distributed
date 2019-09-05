@@ -13,6 +13,8 @@ import (
 )
 
 var wg sync.WaitGroup
+var masterKey bool = false
+var mutex = &sync.Mutex{}
 var result [][]string
 
 type NodeInfo struct {
@@ -33,9 +35,9 @@ func main() {
 	// Allocate one logical processor
 	runtime.GOMAXPROCS(1)
 
-	nodeType := flag.String("nodetype", "master", "type of node")
-	numberOfSlaves := flag.Int("numberofslaves", 3, "number of slaves to use")
-	clusterIp := flag.String("clusterip", "127.0.0.1", "ip address of slave node")
+	nodeType := flag.String("nodeType", "master", "type of node")
+	numberOfNodes := flag.Int("numberOfNodes", 3, "number of slaves to use")
+	clusterIp := flag.String("clusterIp", "127.0.0.1", "ip address of slave node")
 	port := flag.String("port", "3000", "port to use")
 	flag.Parse()
 
@@ -44,26 +46,26 @@ func main() {
 		fmt.Println("Error parsing port number")
 	}
 
-	sampleData := []string{"Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay", "Eight", "Nine"}
-	ip, _ := net.InterfaceAddrs()
-
-	masterNode := NodeInfo{
-		NodeId:     0,
-		NodeIpAddr: ip[0].String(),
-		Port:       *port,
-	}
+	// sampleData := []string{"Sah", "Deepak", "Abhishek", "Sharma", "Zathura", "Harsh", "Jay", "Eight", "Nine"}
+	// ip, _ := net.InterfaceAddrs()
 
 	if *nodeType == "master" {
-		wg.Add(6)
-		for i, j := 0, 0; i < *numberOfSlaves; i, j = i+1, j+3 {
+		wg.Add(*numberOfNodes)
+		for i := 0; i < *numberOfNodes; i++ {
 			parsedPortInInt++
 
-			slaveNode := createNode(*clusterIp, strconv.Itoa(int(parsedPortInInt)))
-			go listenOnPort(slaveNode)
-
-			requestObject := getRequestObject(masterNode, slaveNode, sampleData[j:j+3])
-			go connectToNode(slaveNode, requestObject)
+			node := createNode(*clusterIp, strconv.Itoa(int(parsedPortInInt)))
+			go selectMasterNode(node)
 		}
+		// for i, j := 0, 0; i < *numberOfSlaves; i, j = i+1, j+3 {
+		// 	parsedPortInInt++
+
+		// 	slaveNode := createNode(*clusterIp, strconv.Itoa(int(parsedPortInInt)))
+		// 	go listenOnPort(slaveNode)
+
+		// 	requestObject := getRequestObject(masterNode, slaveNode, sampleData[j:j+3])
+		// 	go connectToNode(slaveNode, requestObject)
+		// }
 		wg.Wait()
 	} else {
 		slaveNode := createNode(*clusterIp, *port)
@@ -143,4 +145,20 @@ func handleResponseFromSlave(conn net.Conn) {
 	decoder.Decode(&response)
 	result = append(result, response.Message)
 	fmt.Println(result)
+}
+
+func divideWork([]string) {}
+
+func selectMasterNode(node NodeInfo) {
+	mutex.Lock()
+	if masterKey {
+		wg.Done()
+		mutex.Unlock()
+		return
+	}
+	fmt.Println(node.Port)
+	masterKey = true
+	wg.Done()
+	// Assign Node as Master
+	mutex.Unlock()
 }
