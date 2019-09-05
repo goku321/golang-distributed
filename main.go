@@ -19,7 +19,7 @@ type NodeInfo struct {
 	NodeId     int    `json:"nodeId"`
 	NodeIpAddr string `json:"nodeIpAddr"`
 	Port       string `json:"port"`
-	IsMaster   bool   `json:"isMaster"`
+	Status     string `json:"status"`
 }
 
 var nodes = make(map[NodeInfo]string)
@@ -30,7 +30,6 @@ var masterNode NodeInfo
 type data struct {
 	Source  NodeInfo
 	Dest    NodeInfo
-	Type    string
 	Message []string
 }
 
@@ -68,7 +67,7 @@ func main() {
 	wg.Wait()
 }
 
-func getRequestObject(source NodeInfo, dest NodeInfo, dataType string, dataToSort []string) data {
+func getRequestObject(source NodeInfo, dest NodeInfo, dataToSort []string) data {
 	return data{
 		Source: NodeInfo{
 			NodeId:     source.NodeId,
@@ -80,7 +79,6 @@ func getRequestObject(source NodeInfo, dest NodeInfo, dataType string, dataToSor
 			NodeIpAddr: dest.NodeIpAddr,
 			Port:       dest.Port,
 		},
-		Type:    dataType,
 		Message: dataToSort,
 	}
 }
@@ -90,7 +88,7 @@ func createNode(ipAddr string, port string) NodeInfo {
 		NodeId:     1,
 		NodeIpAddr: ipAddr,
 		Port:       port,
-		IsMaster:   false,
+		Status:   "down",
 	}
 }
 
@@ -102,9 +100,10 @@ func connectToNode(node NodeInfo) {
 	for {
 		conn, err := net.DialTCP("tcp", laddr, raddr)
 		if err == nil {
-			request := getRequestObject(node, masterNode, "getData", []string{"a"})
+			node.Status = "up"
+			request := getRequestObject(node, masterNode, []string{})
 			json.NewEncoder(conn).Encode(request)
-			handleResponseFromSlave(conn)
+			handleResponseFromMaster(conn)
 			conn.Close()
 			break
 		}
@@ -119,6 +118,7 @@ func listenOnPort(node NodeInfo) {
 	if err != nil {
 		fmt.Printf("Unable to create server at port: %s\n", node.Port)
 	}
+	node.Status = "up"
 
 	for {
 		conn, err := ln.Accept()
@@ -134,22 +134,28 @@ func handleConnection(conn net.Conn) {
 	fmt.Printf("Serving %s\n", conn.RemoteAddr().String())
 	var request data
 	json.NewDecoder(conn).Decode(&request)
-	if request.Type == "getData" {
-		fmt.Println("getData")
+	if request.Source.Status == "up" {
+		// Divide the slice and give it to sort
+		fmt.Println("Slave is Up")
+		var response data
+		response = getRequestObject(request.Dest, request.Source, request.Message)
+		json.NewEncoder(conn).Encode(&response)
+	} else if request.Source.Status == "down" {
+		// Save the result from the slave and close the connection
 	}
-	// sort.Strings(request.Message)
-	var response data
-	response = getRequestObject(request.Dest, request.Source, "sorted", request.Message)
-	json.NewEncoder(conn).Encode(&response)
 	conn.Close()
 }
 
-func handleResponseFromSlave(conn net.Conn) {
+func handleResponseFromMaster(conn net.Conn) {
 	decoder := json.NewDecoder(conn)
 	var response data
 	decoder.Decode(&response)
-	result = append(result, response.Message)
-	fmt.Println("This is the result: ", result)
+	fmt.Println("Response from master: ", response)
+	// Sort the slice here, set the status to down and send it back to master
+	var request data
+	request = getRequestObject(response.Dest, response.Source, response.Message)
+	request.Source.Status = "down"
+	json.NewEncoder(conn).Encode(&request)
 }
 
 func divideWork([]string) {}
