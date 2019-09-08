@@ -74,11 +74,13 @@ func getRequestObject(source NodeInfo, dest NodeInfo, dataToSort []string) data 
 			NodeId:     source.NodeId,
 			NodeIpAddr: source.NodeIpAddr,
 			Port:       source.Port,
+			Status:     source.Status,
 		},
 		Dest: NodeInfo{
 			NodeId:     dest.NodeId,
 			NodeIpAddr: dest.NodeIpAddr,
 			Port:       dest.Port,
+			Status:     dest.Status,
 		},
 		Message: dataToSort,
 	}
@@ -102,10 +104,9 @@ func connectToNode(node NodeInfo) {
 		conn, err := net.DialTCP("tcp", laddr, raddr)
 		if err == nil {
 			node.Status = "up"
-			request := getRequestObject(node, masterNode, []string{})
+			request := getRequestObject(node, masterNode, []string{"Message"})
 			json.NewEncoder(conn).Encode(request)
-			handleResponseFromMaster(conn)
-			conn.Close()
+			go handleResponseFromMaster(conn)
 			break
 		}
 		fmt.Println("There is no Master node available. Waiting...", err)
@@ -135,6 +136,7 @@ func handleConnection(conn net.Conn) {
 	fmt.Printf("Serving %s\n", conn.RemoteAddr().String())
 	var request data
 	json.NewDecoder(conn).Decode(&request)
+	fmt.Println("This is it: ", request)
 	if request.Source.Status == "up" {
 		// Divide the slice and give it to sort
 		fmt.Println("Slave is Up")
@@ -157,6 +159,7 @@ func handleResponseFromMaster(conn net.Conn) {
 	request = getRequestObject(response.Dest, response.Source, response.Message)
 	request.Source.Status = "down"
 	json.NewEncoder(conn).Encode(&request)
+	conn.Close()
 }
 
 func divideWork(sampleData []string, numberOfSlaves int) {
