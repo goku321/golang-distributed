@@ -133,6 +133,7 @@ func listenOnPort(node NodeInfo) {
 }
 
 func handleConnection(conn net.Conn) {
+	defer conn.Close()
 	fmt.Printf("Serving %s\n", conn.RemoteAddr().String())
 	var request data
 	json.NewDecoder(conn).Decode(&request)
@@ -146,10 +147,10 @@ func handleConnection(conn net.Conn) {
 	} else if request.Source.Status == "down" {
 		// Save the result from the slave and close the connection
 	}
-	conn.Close()
 }
 
 func handleResponseFromMaster(conn net.Conn) {
+	defer conn.Close()
 	decoder := json.NewDecoder(conn)
 	var response data
 	decoder.Decode(&response)
@@ -159,7 +160,6 @@ func handleResponseFromMaster(conn net.Conn) {
 	request = getRequestObject(response.Dest, response.Source, response.Message)
 	request.Source.Status = "down"
 	json.NewEncoder(conn).Encode(&request)
-	conn.Close()
 }
 
 func divideWork(sampleData []string, numberOfSlaves int) {
